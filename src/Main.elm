@@ -101,6 +101,17 @@ testParse url =
 parser : UrlParser ( Int, Maybe String )
 parser =
     UrlParser.succeed Tuple.pair
+        |> andMap pathParser
+        |> andMap queryParser
+
+
+pathParser : UrlParser Int
+pathParser =
+    UrlParser.succeed identity
         |> andIgnore (UrlParser.s "foo")
         |> andMap UrlParser.int
-        |> andMap (UrlParser.query "q" identity)
+
+
+queryParser : UrlParser (Maybe String)
+queryParser =
+    UrlParser.query "q" identity
