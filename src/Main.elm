@@ -80,8 +80,8 @@ view model =
         , div []
             [ text
                 (testParse
-                    { path = [ "foo", "1" ]
-                    , query = Dict.fromList [ ( "q", "evan" ) ]
+                    { path = "/foo/1"
+                    , query = Just "?q=evan"
                     }
                 )
             ]
@@ -102,7 +102,7 @@ parser : UrlParser ( Int, Maybe String )
 parser =
     UrlParser.succeed Tuple.pair
         |> andMap pathParser
-        |> andMap queryParser
+        |> andMap (query queryParser)
 
 
 pathParser : UrlParser Int
@@ -112,6 +112,6 @@ pathParser =
         |> andMap UrlParser.int
 
 
-queryParser : UrlParser (Maybe String)
+queryParser : QueryParser (Maybe String)
 queryParser =
-    UrlParser.query "q" identity
+    UrlParser.queryString "q"

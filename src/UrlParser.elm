@@ -1,5 +1,6 @@
 module UrlParser exposing
     ( Context
+    , QueryParser
     , Url
     , UrlParser(..)
     , andIgnore
@@ -8,28 +9,36 @@ module UrlParser exposing
     , int
     , parse
     , query
+    , queryCustom
+    , queryInt
+    , queryString
     , s
     , string
     , succeed
     )
 
 import Dict exposing (Dict)
+import Url
 
 
 type alias Url =
-    { path : List String
-    , query : Dict String String
+    { path : String
+    , query : Maybe String
     }
 
 
 type alias Context =
     { path : List String
-    , query : Dict String String
+    , query : Dict String (List String)
     }
 
 
 type UrlParser a
     = UrlParser (Context -> Result String ( a, Context ))
+
+
+type QueryParser a
+    = QueryParser (Dict String (List String) -> a)
 
 
 succeed : a -> UrlParser a
@@ -141,25 +150,53 @@ int =
         )
 
 
-query : String -> (String -> a) -> UrlParser (Maybe a)
-query key f =
+query : QueryParser a -> UrlParser a
+query queryParser =
     UrlParser
         (\context ->
-            case Dict.get key context.query of
-                Just value ->
-                    Ok
-                        ( Just (f value)
-                        , context
-                        )
+            Ok
+                ( parseQuery queryParser context.query
+                , context
+                )
+        )
 
-                Nothing ->
-                    Ok ( Nothing, context )
+
+parseQuery : QueryParser a -> Dict String (List String) -> a
+parseQuery (QueryParser p) q =
+    p q
+
+
+queryInt : String -> QueryParser (Maybe Int)
+queryInt key =
+    queryCustom String.toInt key
+
+
+queryString : String -> QueryParser (Maybe String)
+queryString key =
+    queryCustom Just key
+
+
+queryCustom : (String -> Maybe a) -> String -> QueryParser (Maybe a)
+queryCustom f key =
+    QueryParser
+        (\q ->
+            case Dict.get key q of
+                Just [ value ] ->
+                    f value
+
+                _ ->
+                    Nothing
         )
 
 
 parse : UrlParser a -> Url -> Maybe a
 parse (UrlParser p) url =
-    case p url of
+    case
+        p
+            { path = preparePath url.path
+            , query = prepareQuery url.query
+            }
+    of
         Ok ( a, context ) ->
             let
                 _ =
@@ -173,3 +210,74 @@ parse (UrlParser p) url =
                     Debug.log "error message" message
             in
             Nothing
+
+
+
+-- PREPARE PATH (from elm/url)
+
+
+preparePath : String -> List String
+preparePath path =
+    case String.split "/" path of
+        "" :: segments ->
+            removeFinalEmpty segments
+
+        segments ->
+            removeFinalEmpty segments
+
+
+removeFinalEmpty : List String -> List String
+removeFinalEmpty segments =
+    case segments of
+        [] ->
+            []
+
+        "" :: [] ->
+            []
+
+        segment :: rest ->
+            segment :: removeFinalEmpty rest
+
+
+
+-- PREPARE QUERY (from elm/url)
+
+
+prepareQuery : Maybe String -> Dict String (List String)
+prepareQuery maybeQuery =
+    case maybeQuery of
+        Nothing ->
+            Dict.empty
+
+        Just qry ->
+            List.foldr addParam Dict.empty (String.split "&" qry)
+
+
+addParam : String -> Dict String (List String) -> Dict String (List String)
+addParam segment dict =
+    case String.split "=" segment of
+        [ rawKey, rawValue ] ->
+            case Url.percentDecode rawKey of
+                Nothing ->
+                    dict
+
+                Just key ->
+                    case Url.percentDecode rawValue of
+                        Nothing ->
+                            dict
+
+                        Just value ->
+                            Dict.update key (addToParametersHelp value) dict
+
+        _ ->
+            dict
+
+
+addToParametersHelp : a -> Maybe (List a) -> Maybe (List a)
+addToParametersHelp value maybeList =
+    case maybeList of
+        Nothing ->
+            Just [ value ]
+
+        Just list ->
+            Just (value :: list)
